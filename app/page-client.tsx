@@ -6,19 +6,21 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { YandexMap } from '@/components/yandex-map'
+import { CategoryTiles } from '@/components/category-tiles'
 import { Search, MapPin, Clock, Heart, ArrowRight, Users, Shield, Zap } from 'lucide-react'
 import Link from 'next/link'
 import type { SafeRequest } from '@/lib/types'
 
 import { User } from '@supabase/supabase-js'
+import { DISTRICTS, CATEGORIES, URGENCY_OPTIONS } from '@/lib/constants'
 
 interface HomeClientProps {
   initialRequests: SafeRequest[]
   user: User | null
 }
 
-const districts = ['Все районы', 'Центральный', 'Северный', 'Южный', 'Восточный', 'Западный']
-const categories = ['Все категории', 'уборка', 'ремонт', 'доставка', 'уход', 'другое']
+const districts = DISTRICTS
+const categories = ['Все категории', ...CATEGORIES]
 
 function formatTimeAgo(date: string): string {
   const now = new Date()
@@ -132,11 +134,28 @@ export function HomeClient({ initialRequests, user }: HomeClientProps) {
         </div>
       </section>
 
-      {/* Фильтры и поиск */}
-      <section className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 py-8 sticky top-[73px] z-40">
+      {/* Плитки категорий */}
+      <section className="bg-white border-b border-gray-200 py-12">
         <div className="container mx-auto px-4">
           <div className="max-w-6xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Выберите категорию</h2>
+              <p className="text-gray-600">Найдите нужную услугу или предложите свою помощь</p>
+            </div>
+            <CategoryTiles
+              selectedCategory={selectedCategory === 'Все категории' ? undefined : selectedCategory}
+              onCategorySelect={(category) => setSelectedCategory(category)}
+              showAll={true}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Фильтры и поиск */}
+      <section className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 py-6 sticky top-[73px] z-40">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="relative group">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                 <Input
@@ -153,16 +172,6 @@ export function HomeClient({ initialRequests, user }: HomeClientProps) {
                 <SelectContent>
                   {districts.map(district => (
                     <SelectItem key={district} value={district}>{district}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="border-2 shadow-sm hover:shadow-md transition-all">
-                  <SelectValue placeholder="Выберите категорию" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map(category => (
-                    <SelectItem key={category} value={category}>{category}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

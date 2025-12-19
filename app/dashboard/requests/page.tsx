@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { sanitizeRequests } from '@/lib/utils'
 import type { SafeRequest } from '@/lib/types'
+import { logger } from '@/lib/logger'
 
 export default async function MyRequestsPage() {
   const supabase = createClient()
@@ -23,12 +24,12 @@ export default async function MyRequestsPage() {
       .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching user requests:', error)
+      logger.error('Error fetching user requests', error, { userId: user.id })
     } else {
       requests = sanitizeRequests(userRequests || [])
     }
   } catch (error) {
-    console.error('Error loading requests:', error)
+    logger.error('Error loading requests', error, { userId: user.id })
   }
 
   return (

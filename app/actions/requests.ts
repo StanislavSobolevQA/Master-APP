@@ -2,14 +2,29 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { logger } from '@/lib/logger'
+import { createRequestSchema } from '@/lib/validation'
+import type { PaginatedResponse, Status, District } from '@/lib/types'
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, DISTRICTS } from '@/lib/constants'
 
-export async function getRequests(district?: string, status: 'open' | 'all' = 'open') {
+export async function getRequests(
+  district?: string, 
+  status: 'open' | 'all' = 'open',
+  page: number = 1,
+  pageSize: number = DEFAULT_PAGE_SIZE
+): Promise<PaginatedResponse<any> | any[]> {
   const supabase = createClient()
+
+  // Валидация параметров пагинации
+  const validPage = Math.max(1, Math.floor(page))
+  const validPageSize = Math.min(Math.max(1, Math.floor(pageSize)), MAX_PAGE_SIZE)
+
+  // Если пагинация не запрошена (старый API), возвращаем массив
+  const usePagination = page > 0 && pageSize > 0
 
   let query = supabase
     .from('requests')
-    .select('*')
+    .select(usePagination ? '*, count' : '*', { count: usePagination ? 'exact' : undefined })
     .order('created_at', { ascending: false })
 
   // Фильтрация по статусу (по умолчанию только открытые)
@@ -17,18 +32,39 @@ export async function getRequests(district?: string, status: 'open' | 'all' = 'o
     query = query.eq('status', 'open')
   }
 
-  if (district && district !== 'Все районы') {
+  if (district && district !== DISTRICTS[0]) {
     query = query.eq('district', district)
   }
 
-  const { data, error } = await query
-
-  if (error) {
-    console.error('Error fetching requests:', error)
-    return []
+  if (usePagination) {
+    const from = (validPage - 1) * validPageSize
+    const to = from + validPageSize - 1
+    query = query.range(from, to)
   }
 
-  return data
+  const { data, error, count } = await query
+
+  if (error) {
+    logger.error('Error fetching requests', error, { district, status, page, pageSize })
+    return usePagination 
+      ? { data: [], pagination: { page: validPage, pageSize: validPageSize, total: 0, totalPages: 0 } }
+      : []
+  }
+
+  if (usePagination) {
+    const total = count || 0
+    return {
+      data: data || [],
+      pagination: {
+        page: validPage,
+        pageSize: validPageSize,
+        total,
+        totalPages: Math.ceil(total / validPageSize)
+      }
+    }
+  }
+
+  return data || []
 }
 
 export type CreateRequestParams = {
@@ -49,54 +85,62 @@ export async function createRequest(params: CreateRequestParams) {
   // Check auth
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    logger.warn('Unauthorized attempt to create request', { userId: null })
     throw new Error('Unauthorized')
   }
 
-  const {
-    title,
-    description,
-    category,
-    urgency,
-    reward_type,
-    reward_amount,
-    district,
-    contact_type,
-    contact_value
-  } = params
-
-  console.log('[createRequest] Received:', { title, description, category, district, contact_value })
-
-  if (!title || !description || !category || !district || !contact_value) {
-    throw new Error(`Missing required fields: ${JSON.stringify({ title: !!title, description: !!description, category: !!category, district: !!district, contact_value: !!contact_value })}`)
-  }
-
-  const { data, error } = await supabase
-    .from('requests')
-    .insert({
-      author_id: user.id,
-      title,
-      description,
-      category,
-      urgency,
-      reward_type,
-      reward_amount,
-      district,
-      status: 'open',
-      contact_type: contact_type || 'telegram',
-      contact_value: contact_value,
+  try {
+    // Валидация с Zod
+    const validated = createRequestSchema.parse({
+      ...params,
+      reward_amount: params.reward_type === 'money' ? params.reward_amount : null
     })
-    .select()
-    .single()
 
-  if (error) {
-    console.error('Error creating request:', error)
-    throw new Error('Failed to create request')
+    logger.info('Creating request', { 
+      userId: user.id, 
+      category: validated.category,
+      district: validated.district 
+    })
+
+    const { data, error } = await supabase
+      .from('requests')
+      .insert({
+        author_id: user.id,
+        title: validated.title,
+        description: validated.description,
+        category: validated.category,
+        urgency: validated.urgency,
+        reward_type: validated.reward_type,
+        reward_amount: validated.reward_amount,
+        district: validated.district,
+        status: 'open',
+        contact_type: validated.contact_type,
+        contact_value: validated.contact_value,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      logger.error('Error creating request', error, { userId: user.id, params: validated })
+      throw new Error(`Не удалось создать запрос: ${error.message}`)
+    }
+
+    revalidatePath('/')
+    revalidatePath('/dashboard')
+
+    logger.info('Request created successfully', { requestId: data?.id, userId: user.id })
+    return data
+  } catch (error) {
+    // Обработка ошибок валидации Zod
+    if (error instanceof Error && error.name === 'ZodError') {
+      const zodError = error as any
+      const firstError = zodError.errors?.[0]
+      const message = firstError?.message || 'Ошибка валидации данных'
+      logger.warn('Validation error in createRequest', { userId: user.id, errors: zodError.errors })
+      throw new Error(message)
+    }
+    throw error
   }
-
-  revalidatePath('/')
-  revalidatePath('/dashboard')
-
-  return data
 }
 
 export async function createOffer(requestId: string) {
@@ -146,12 +190,12 @@ export async function createOffer(requestId: string) {
     })
 
   if (error) {
-    console.error('Error creating offer:', error)
+    logger.error('Error creating offer', error, { requestId, userId: user.id })
     // Проверяем, если это ошибка дубликата (UNIQUE constraint)
     if (error.code === '23505') {
       return { success: false, error: 'ALREADY_OFFERED', message: 'Вы уже откликнулись на этот запрос' }
     }
-    return { success: false, error: error.message }
+    return { success: false, error: error.message || 'Не удалось создать отклик' }
   }
 
   revalidatePath('/')
@@ -247,7 +291,7 @@ export async function getRequestById(id: string) {
     .single()
 
   if (error || !request) {
-    console.error('Error fetching request:', error)
+    logger.error('Error fetching request by ID', error, { requestId: id })
     return null
   }
 
@@ -274,7 +318,7 @@ export async function getOffers(requestId: string) {
     .order('created_at', { ascending: false })
 
   if (error) {
-    console.error('Error fetching offers:', error)
+    logger.error('Error fetching offers', error, { requestId })
     return []
   }
 
@@ -309,7 +353,7 @@ export async function getUserProfile(userId: string) {
     .single()
 
   if (error) {
-    console.error('Error fetching user profile:', error)
+    logger.error('Error fetching user profile', error, { userId })
     return null
   }
 
@@ -345,7 +389,7 @@ export async function getMyOffers() {
     .order('created_at', { ascending: false })
 
   if (requestsError) {
-    console.error('Error fetching requests:', requestsError)
+    logger.error('Error fetching requests for my offers', requestsError, { userId: user.id })
     return []
   }
 
@@ -371,4 +415,112 @@ export async function getUserOfferIds() {
   }
 
   return offers.map(o => o.request_id)
+}
+
+// Обновление запроса
+export async function updateRequest(
+  requestId: string,
+  params: Partial<CreateRequestParams>
+) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('Unauthorized')
+  }
+
+  // Проверяем владельца
+  const { data: request } = await supabase
+    .from('requests')
+    .select('author_id, status')
+    .eq('id', requestId)
+    .single()
+
+  if (!request || request.author_id !== user.id) {
+    throw new Error('Unauthorized')
+  }
+
+  // Подготавливаем данные для обновления
+  const updateData: any = {}
+  
+  if (params.title !== undefined) updateData.title = params.title.trim()
+  if (params.description !== undefined) updateData.description = params.description.trim()
+  if (params.category !== undefined) updateData.category = params.category
+  if (params.urgency !== undefined) updateData.urgency = params.urgency
+  if (params.reward_type !== undefined) updateData.reward_type = params.reward_type
+  if (params.reward_amount !== undefined) updateData.reward_amount = params.reward_amount
+  if (params.district !== undefined) updateData.district = params.district
+  if (params.contact_type !== undefined) updateData.contact_type = params.contact_type
+  if (params.contact_value !== undefined) updateData.contact_value = params.contact_value.trim()
+
+  // Валидация через Zod (если переданы все обязательные поля)
+  if (updateData.title && updateData.description && updateData.category) {
+    try {
+      createRequestSchema.partial().parse(updateData)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'ZodError') {
+        const zodError = error as any
+        const firstError = zodError.errors?.[0]
+        throw new Error(firstError?.message || 'Ошибка валидации данных')
+      }
+      throw error
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('requests')
+    .update(updateData)
+    .eq('id', requestId)
+    .select()
+    .single()
+
+  if (error) {
+    logger.error('Error updating request', error, { requestId, userId: user.id })
+    throw new Error(`Не удалось обновить запрос: ${error.message}`)
+  }
+
+  revalidatePath('/')
+  revalidatePath('/dashboard')
+  revalidatePath(`/requests/${requestId}`)
+
+  logger.info('Request updated successfully', { requestId, userId: user.id })
+  return data
+}
+
+// Удаление запроса
+export async function deleteRequest(requestId: string) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  // Проверяем владельца
+  const { data: request } = await supabase
+    .from('requests')
+    .select('author_id')
+    .eq('id', requestId)
+    .single()
+
+  if (!request || request.author_id !== user.id) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const { error } = await supabase
+    .from('requests')
+    .delete()
+    .eq('id', requestId)
+
+  if (error) {
+    logger.error('Error deleting request', error, { requestId, userId: user.id })
+    return { success: false, error: error.message }
+  }
+
+  revalidatePath('/')
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/requests')
+
+  logger.info('Request deleted successfully', { requestId, userId: user.id })
+  return { success: true }
 }

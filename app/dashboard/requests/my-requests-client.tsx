@@ -1,13 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { closeRequest } from '@/app/actions/requests'
-import { Clock, MapPin, Trash2, CheckCircle } from 'lucide-react'
-import { toast } from 'sonner'
+import { Clock, MapPin, ArrowRight } from 'lucide-react'
 import type { SafeRequest } from '@/lib/types'
-import { useRouter } from 'next/navigation'
 
 function formatTimeAgo(date: string): string {
   const now = new Date()
@@ -27,30 +25,7 @@ interface MyRequestsClientProps {
 }
 
 export function MyRequestsClient({ initialRequests }: MyRequestsClientProps) {
-  const router = useRouter()
-  const [requests, setRequests] = useState<SafeRequest[]>(initialRequests)
-  const [closingId, setClosingId] = useState<string | null>(null)
-
-  const handleClose = async (id: string) => {
-    if (!confirm('Закрыть этот запрос?')) return
-
-    setClosingId(id)
-    try {
-      const result = await closeRequest(id)
-      if (result.success) {
-        setRequests(requests.map(r => r.id === id ? { ...r, status: 'closed' } : r))
-        router.refresh()
-        toast.success('Запрос успешно закрыт')
-      } else {
-        toast.error(result.error || 'Ошибка при закрытии запроса')
-      }
-    } catch (error) {
-      toast.error('Ошибка при закрытии запроса')
-      console.error('Error closing request:', error)
-    } finally {
-      setClosingId(null)
-    }
-  }
+  const [requests] = useState<SafeRequest[]>(initialRequests)
 
   const statusLabels: Record<string, string> = {
     open: 'Открыт',
@@ -79,57 +54,53 @@ export function MyRequestsClient({ initialRequests }: MyRequestsClientProps) {
         ) : (
           <div className="space-y-4">
             {requests.map(request => (
-              <div
+              <Link
                 key={request.id}
-                className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow"
+                href={`/requests/${request.id}`}
+                className="block group"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">{request.title}</h3>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <Badge variant="outline">{request.category}</Badge>
-                      <Badge className={statusColors[request.status]}>
-                        {statusLabels[request.status]}
-                      </Badge>
-                      <Badge variant="default">
-                        {request.reward_type === 'money'
-                          ? `${request.reward_amount} ₽`
-                          : 'Спасибо'}
-                      </Badge>
+                <div
+                  className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-all cursor-pointer hover:border-primary/50"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900 group-hover:text-primary transition-colors">{request.title}</h3>
+                        <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-primary transition-colors" />
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <Badge variant="outline">{request.category}</Badge>
+                        <Badge className={statusColors[request.status]}>
+                          {statusLabels[request.status]}
+                        </Badge>
+                        <Badge variant="default">
+                          {request.reward_type === 'money'
+                            ? `${request.reward_amount} ₽`
+                            : 'Спасибо'}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <p className="text-gray-700 mb-4">{request.description}</p>
+                  <p className="text-gray-700 mb-4 line-clamp-2">{request.description}</p>
 
-                <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
-                  <div className="flex items-center gap-1">
-                    <MapPin className="h-4 w-4" />
-                    <span>{request.district}</span>
+                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
+                    <div className="flex items-center gap-1">
+                      <MapPin className="h-4 w-4" />
+                      <span>{request.district}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      <span>{formatTimeAgo(request.created_at)}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    <span>{formatTimeAgo(request.created_at)}</span>
+
+                  <div className="text-sm text-primary font-medium mt-2 flex items-center gap-1">
+                    Нажмите для просмотра и редактирования
+                    <ArrowRight className="h-4 w-4" />
                   </div>
                 </div>
-
-                {request.status !== 'closed' && (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleClose(request.id)}
-                    disabled={closingId === request.id}
-                  >
-                    {closingId === request.id ? (
-                      'Закрытие...'
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Закрыть запрос
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
+              </Link>
             ))}
           </div>
         )}

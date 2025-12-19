@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Clock, MapPin, MessageCircle } from 'lucide-react'
 import { getRequestContact } from '@/app/actions/requests'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { useState } from 'react'
 import Link from 'next/link'
 
@@ -43,7 +44,7 @@ export function MyOffersClient({ initialOffers }: MyOffersClientProps) {
       }
     } catch (error) {
       toast.error('Не удалось получить контакт. Убедитесь, что вы откликнулись на запрос.')
-      console.error('Error getting contact:', error)
+      logger.error('Error getting contact', error, { requestId })
     } finally {
       setLoadingContact(null)
     }

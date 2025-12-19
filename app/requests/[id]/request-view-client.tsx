@@ -5,11 +5,20 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { createOffer, getRequestContact, closeRequest, getRequestById } from '@/app/actions/requests'
-import { Clock, MapPin, User, CheckCircle, MessageCircle, Copy, ArrowRight, Shield, Zap, Info } from 'lucide-react'
+import { createOffer, getRequestContact, closeRequest, updateRequest, deleteRequest } from '@/app/actions/requests'
+import { Clock, MapPin, User, CheckCircle, MessageCircle, Copy, ArrowRight, Shield, Zap, Info, Edit, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import Link from 'next/link'
 import type { Request } from '@/lib/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { CategoryTiles } from '@/components/category-tiles'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { CATEGORIES, URGENCY_OPTIONS, DISTRICTS, CONTACT_TYPES } from '@/lib/constants'
+import type { Category, Urgency, RewardType, ContactType } from '@/lib/constants'
 
 function formatTimeAgo(date: string): string {
   const now = new Date()
@@ -38,11 +47,29 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
   const [isOfferDialogOpen, setIsOfferDialogOpen] = useState(false)
   const [contact, setContact] = useState<{ contact_type: string; contact_value: string } | null>(null)
   const [loadingContact, setLoadingContact] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [currentRequest, setCurrentRequest] = useState(request)
+  
+  // Форма редактирования
+  const [editFormData, setEditFormData] = useState({
+    title: request.title,
+    description: request.description,
+    category: request.category as Category,
+    urgency: request.urgency as Urgency,
+    reward_type: request.reward_type as RewardType,
+    reward_amount: request.reward_amount?.toString() || '',
+    district: request.district,
+    contact_type: request.contact_type as ContactType,
+    contact_value: request.contact_value || ''
+  })
 
   const handleRespond = async () => {
     setIsLoading(true)
     try {
-      const result = await createOffer(request.id)
+      const result = await createOffer(currentRequest.id)
       
       if (!result.success) {
         const errorMessages: Record<string, string> = {
@@ -57,7 +84,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
       }
 
       // Получаем контакты после успешного отклика
-      const contactData = await getRequestContact(request.id)
+      const contactData = await getRequestContact(currentRequest.id)
       if (contactData) {
         setContact(contactData)
       }
@@ -67,7 +94,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Ошибка при отклике'
       toast.error(errorMessage)
-      console.error('Error creating offer:', error)
+      logger.error('Error creating offer', error, { requestId: currentRequest.id })
     } finally {
       setIsLoading(false)
     }
@@ -78,7 +105,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
 
     setIsLoading(true)
     try {
-      const result = await closeRequest(request.id)
+      const result = await closeRequest(currentRequest.id)
       if (result.success) {
         toast.success('Запрос успешно закрыт')
         router.push('/dashboard/requests')
@@ -87,9 +114,58 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
       }
     } catch (error) {
       toast.error('Ошибка при закрытии запроса')
-      console.error('Error closing request:', error)
+      logger.error('Error closing request', error, { requestId: currentRequest.id })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsUpdating(true)
+    
+    try {
+      const updated = await updateRequest(currentRequest.id, {
+        title: editFormData.title,
+        description: editFormData.description,
+        category: editFormData.category,
+        urgency: editFormData.urgency,
+        reward_type: editFormData.reward_type,
+        reward_amount: editFormData.reward_type === 'money' ? Number(editFormData.reward_amount) : null,
+        district: editFormData.district,
+        contact_type: editFormData.contact_type,
+        contact_value: editFormData.contact_value
+      })
+
+      setCurrentRequest({ ...currentRequest, ...updated })
+      setIsEditDialogOpen(false)
+      router.refresh()
+      toast.success('Запрос успешно обновлен!')
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка при обновлении запроса'
+      toast.error(errorMessage)
+      logger.error('Error updating request', error, { requestId: currentRequest.id })
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setIsDeleting(true)
+    try {
+      const result = await deleteRequest(currentRequest.id)
+      if (result.success) {
+        toast.success('Запрос успешно удален')
+        router.push('/dashboard/requests')
+      } else {
+        toast.error(result.error || 'Ошибка при удалении запроса')
+      }
+    } catch (error) {
+      toast.error('Ошибка при удалении запроса')
+      logger.error('Error deleting request', error, { requestId: currentRequest.id })
+    } finally {
+      setIsDeleting(false)
+      setIsDeleteDialogOpen(false)
     }
   }
 
@@ -126,23 +202,44 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
               <div className="p-8">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2 leading-tight">{request.title}</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-2 leading-tight">{currentRequest.title}</h1>
                     <div className="flex items-center text-gray-500 text-sm mb-4">
                       <Clock className="h-4 w-4 mr-1" />
-                      {formatTimeAgo(request.created_at)}
+                      {formatTimeAgo(currentRequest.created_at)}
                       <span className="mx-2">•</span>
-                      {request.category}
+                      {currentRequest.category}
                     </div>
                   </div>
-                  {request.status !== 'open' && (
-                    <Badge variant={request.status === 'closed' ? 'secondary' : 'default'} className="text-sm px-3 py-1">
-                      {request.status === 'closed' ? 'Закрыто' : 'В работе'}
+                  {currentRequest.status !== 'open' && (
+                    <Badge variant={currentRequest.status === 'closed' ? 'secondary' : 'default'} className="text-sm px-3 py-1">
+                      {currentRequest.status === 'closed' ? 'Закрыто' : 'В работе'}
                     </Badge>
+                  )}
+                  {isAuthor && (
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditDialogOpen(true)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Редактировать
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Удалить
+                      </Button>
+                    </div>
                   )}
                 </div>
 
                 <div className="prose max-w-none text-gray-700 leading-relaxed mb-8">
-                  {request.description}
+                  {currentRequest.description}
                 </div>
 
                 <div className="flex flex-wrap gap-4 py-6 border-t border-b border-gray-100">
@@ -152,7 +249,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Район</p>
-                      <p className="font-semibold text-gray-900">{request.district}</p>
+                      <p className="font-semibold text-gray-900">{currentRequest.district}</p>
                     </div>
                   </div>
                   <div className="w-px h-10 bg-gray-200 hidden sm:block"></div>
@@ -162,8 +259,8 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Срочность</p>
-                      <Badge variant={urgencyColors[request.urgency]} className="mt-0.5">
-                        {urgencyLabels[request.urgency]}
+                      <Badge variant={urgencyColors[currentRequest.urgency]} className="mt-0.5">
+                        {urgencyLabels[currentRequest.urgency]}
                       </Badge>
                     </div>
                   </div>
@@ -175,7 +272,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
                     <div>
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Вознаграждение</p>
                       <p className="font-semibold text-gray-900">
-                        {request.reward_type === 'money' ? `${request.reward_amount} ₽` : 'Благодарность'}
+                        {currentRequest.reward_type === 'money' ? `${currentRequest.reward_amount} ₽` : 'Благодарность'}
                       </p>
                     </div>
                   </div>
@@ -187,7 +284,7 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {request.profiles?.display_name || 'Пользователь'}
+                      {currentRequest.profiles?.display_name || 'Пользователь'}
                     </p>
                     <p className="text-xs text-gray-500">Автор запроса</p>
                   </div>
@@ -239,18 +336,34 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
           {/* Sidebar / Actions */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 sticky top-24">
-              {request.status === 'open' ? (
+              {currentRequest.status === 'open' ? (
                 isAuthor ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-blue-50 rounded-lg text-blue-800 text-sm">
                       <div className="flex items-start gap-2">
                         <Info className="h-4 w-4 mt-0.5" />
-                        <p>Это ваш запрос. Вы будете получать уведомления о новых откликах.</p>
+                        <p>Это ваш запрос. Вы можете редактировать или удалить его.</p>
                       </div>
                     </div>
                     <Button
                       variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => setIsEditDialogOpen(true)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Редактировать запрос
+                    </Button>
+                    <Button
+                      variant="outline"
                       className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      onClick={() => setIsDeleteDialogOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Удалить запрос
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
                       onClick={handleClose}
                       disabled={isLoading}
                     >
@@ -360,6 +473,172 @@ export function RequestViewClient({ request, offers: initialOffers, isAuthor, us
             <Button variant="outline" onClick={() => setIsOfferDialogOpen(false)}>Отмена</Button>
             <Button onClick={handleRespond} disabled={isLoading} className="bg-primary text-white">
               {isLoading ? 'Отправка...' : 'Подтвердить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог редактирования */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Редактировать запрос</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdate}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-3">
+                <Label>Категория *</Label>
+                <CategoryTiles
+                  selectedCategory={editFormData.category}
+                  onCategorySelect={(category) => setEditFormData({ ...editFormData, category: category as Category })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Заголовок *</Label>
+                <Input
+                  placeholder="Краткое описание задачи"
+                  value={editFormData.title}
+                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Описание *</Label>
+                <Textarea
+                  placeholder="Подробное описание задачи"
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  rows={4}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Когда нужно *</Label>
+                <Select
+                  value={editFormData.urgency}
+                  onValueChange={(v) => setEditFormData({ ...editFormData, urgency: v as Urgency })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(URGENCY_OPTIONS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Вознаграждение *</Label>
+                <RadioGroup
+                  value={editFormData.reward_type}
+                  onValueChange={(v) => setEditFormData({ ...editFormData, reward_type: v as RewardType, reward_amount: '' })}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="thanks" id="edit-thanks" />
+                    <Label htmlFor="edit-thanks" className="cursor-pointer">Спасибо</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="money" id="edit-money" />
+                    <Label htmlFor="edit-money" className="cursor-pointer">₽</Label>
+                  </div>
+                </RadioGroup>
+                {editFormData.reward_type === 'money' && (
+                  <Input
+                    type="number"
+                    placeholder="Сумма"
+                    value={editFormData.reward_amount}
+                    onChange={(e) => setEditFormData({ ...editFormData, reward_amount: e.target.value })}
+                    className="mt-2"
+                    min="1"
+                  />
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Район *</Label>
+                <Select
+                  value={editFormData.district}
+                  onValueChange={(v) => setEditFormData({ ...editFormData, district: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DISTRICTS.slice(1).map(district => (
+                      <SelectItem key={district} value={district}>{district}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Контакт *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={editFormData.contact_type}
+                    onValueChange={(v) => setEditFormData({ ...editFormData, contact_type: v as ContactType })}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(CONTACT_TYPES).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder={editFormData.contact_type === 'telegram' ? '@username' : '+7 999 123-45-67'}
+                    value={editFormData.contact_value}
+                    onChange={(e) => setEditFormData({ ...editFormData, contact_value: e.target.value })}
+                    className="flex-1"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Отмена
+              </Button>
+              <Button
+                type="submit"
+                disabled={isUpdating}
+                className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg hover:shadow-xl transition-all text-white"
+              >
+                {isUpdating ? 'Сохранение...' : 'Сохранить изменения'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог удаления */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить запрос</DialogTitle>
+            <DialogDescription>
+              Вы уверены, что хотите удалить этот запрос? Это действие нельзя отменить.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
+              <Trash2 className="h-5 w-5 text-red-600 mt-0.5" />
+              <p className="text-sm text-red-700">
+                Все отклики на этот запрос также будут удалены. Это действие необратимо.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? 'Удаление...' : 'Удалить запрос'}
             </Button>
           </DialogFooter>
         </DialogContent>

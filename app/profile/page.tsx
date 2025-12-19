@@ -3,6 +3,7 @@ import { Navbar } from '@/components/navbar'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getUserProfile } from '@/app/actions/requests'
+import { logger } from '@/lib/logger'
 
 export default async function ProfilePage() {
   const supabase = createClient()
@@ -17,7 +18,7 @@ export default async function ProfilePage() {
   try {
     profile = await getUserProfile(user.id)
   } catch (error) {
-    console.error('Error loading user profile:', error)
+    logger.error('Error loading user profile', error, { userId: user.id })
   }
   
   return (

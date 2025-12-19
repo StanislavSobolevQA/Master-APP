@@ -4,6 +4,7 @@ import { DashboardClient } from './page-client'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import type { SafeRequest } from '@/lib/types'
+import { logger } from '@/lib/logger'
 
 export default async function DashboardPage() {
   const supabase = createClient()
@@ -20,7 +21,7 @@ export default async function DashboardPage() {
     const profile = await getUserProfile(user.id)
     userDistrict = profile?.district
   } catch (error) {
-    console.error('Error loading user profile:', error)
+    logger.error('Error loading user profile', error, { userId: user.id })
   }
 
   // Загружаем открытые запросы (для таба "Нужна помощь")
@@ -28,9 +29,10 @@ export default async function DashboardPage() {
   try {
     const fetchedRequests = await getRequests(undefined, 'open')
     // Удаляем contact_value для безопасности (не передаем в клиентский компонент)
-    requests = sanitizeRequests(fetchedRequests)
+    const requestsData = Array.isArray(fetchedRequests) ? fetchedRequests : fetchedRequests.data || []
+    requests = sanitizeRequests(requestsData)
   } catch (error) {
-    console.error('Error loading requests:', error)
+    logger.error('Error loading requests', error, { userId: user.id })
     requests = []
   }
 
@@ -42,7 +44,7 @@ export default async function DashboardPage() {
     myOffers = sanitizeRequests(fetchedMyOffers)
     userOfferIds = await getUserOfferIds()
   } catch (error) {
-    console.error('Error loading my offers:', error)
+    logger.error('Error loading my offers', error, { userId: user.id })
     myOffers = []
   }
 

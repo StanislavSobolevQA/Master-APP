@@ -14,23 +14,17 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { Plus, Search, Clock, MapPin, Heart } from 'lucide-react'
 import { createRequest, createOffer } from '@/app/actions/requests'
+import { CategoryTiles } from '@/components/category-tiles'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { SafeRequest } from '@/lib/types'
+import { DISTRICTS, CATEGORIES, URGENCY_OPTIONS } from '@/lib/constants'
+import type { Category, Urgency, RewardType, ContactType } from '@/lib/constants'
+import { logger } from '@/lib/logger'
 
-type Category = 'уборка' | 'ремонт' | 'доставка' | 'уход' | 'другое'
-type Urgency = 'today' | 'tomorrow' | 'week' | 'not-urgent'
-type RewardType = 'thanks' | 'money'
-type ContactType = 'telegram' | 'phone'
-
-const categories: Category[] = ['уборка', 'ремонт', 'доставка', 'уход', 'другое']
-const districts = ['Все районы', 'Центральный', 'Северный', 'Южный', 'Восточный', 'Западный']
-const urgencyLabels: Record<Urgency, string> = {
-  'today': 'Сегодня',
-  'tomorrow': 'Завтра',
-  'week': 'На неделе',
-  'not-urgent': 'Не срочно'
-}
+const categories = CATEGORIES
+const districts = DISTRICTS
+const urgencyLabels = URGENCY_OPTIONS
 
 function formatTimeAgo(date: string): string {
   const now = new Date()
@@ -68,6 +62,7 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
   const [urgencyFilter, setUrgencyFilter] = useState<string>('all')
   const [onlyPaid, setOnlyPaid] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all')
 
   // Форма создания запроса
   const [formData, setFormData] = useState({
@@ -84,46 +79,45 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
   // Фильтрация запросов для таба "Нужна помощь"
   const filteredRequests = useMemo(() => {
     const source = activeTab === 'need' ? requests : myOffers
-    return source.filter(req => {
-      if (selectedDistrict !== 'Все районы' && req.district !== selectedDistrict) return false
+    let filtered = source.filter(req => {
+      if (selectedDistrict !== DISTRICTS[0] && req.district !== selectedDistrict) return false
       if (categoryFilter !== 'all' && req.category !== categoryFilter) return false
       if (urgencyFilter !== 'all' && req.urgency !== urgencyFilter) return false
       if (onlyPaid && req.reward_type !== 'money') return false
       if (searchQuery && !req.title.toLowerCase().includes(searchQuery.toLowerCase()) && !req.description.toLowerCase().includes(searchQuery.toLowerCase())) return false
       return true
     })
-  }, [requests, myOffers, activeTab, selectedDistrict, categoryFilter, urgencyFilter, onlyPaid, searchQuery])
+
+    // Фильтр по дате
+    if (dateFilter !== 'all') {
+      const now = new Date()
+      const filterDate = new Date()
+      
+      switch (dateFilter) {
+        case 'today':
+          filterDate.setHours(0, 0, 0, 0)
+          break
+        case 'week':
+          filterDate.setDate(now.getDate() - 7)
+          break
+        case 'month':
+          filterDate.setMonth(now.getMonth() - 1)
+          break
+      }
+      
+      filtered = filtered.filter(req => new Date(req.created_at) >= filterDate)
+    }
+
+    return filtered
+  }, [requests, myOffers, activeTab, selectedDistrict, categoryFilter, urgencyFilter, onlyPaid, searchQuery, dateFilter])
 
   const handleCreateRequest = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    // Валидация обязательных полей
+    // Валидация через Zod происходит на сервере в createRequest
+    // Здесь оставляем только базовую проверку обязательных полей
     if (!formData.category || !formData.title || !formData.description || !formData.contactValue) {
       toast.error('Заполните все обязательные поля')
-      return
-    }
-
-    // Валидация суммы вознаграждения
-    if (formData.reward === 'money') {
-      const amount = Number(formData.amount)
-      if (isNaN(amount) || amount <= 0) {
-        toast.error('Укажите корректную сумму больше 0')
-        return
-      }
-      if (amount > 1000000) {
-        toast.error('Сумма не может превышать 1 000 000 ₽')
-        return
-      }
-    }
-
-    // Валидация длины полей
-    if (formData.title.length < 5 || formData.title.length > 100) {
-      toast.error('Заголовок должен быть от 5 до 100 символов')
-      return
-    }
-
-    if (formData.description.length < 10 || formData.description.length > 2000) {
-      toast.error('Описание должно быть от 10 до 2000 символов')
       return
     }
 
@@ -136,15 +130,17 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
         urgency: formData.urgency,
         reward_type: formData.reward,
         reward_amount: formData.reward === 'money' ? Number(formData.amount) : null,
-        district: selectedDistrict === 'Все районы' ? 'Центральный' : selectedDistrict,
+        district: selectedDistrict === DISTRICTS[0] ? DISTRICTS[1] : selectedDistrict,
         contact_type: formData.contactType,
         contact_value: formData.contactValue.trim(),
       })
 
       // Обновляем список и перенаправляем
       // Удаляем contact_value для безопасности перед добавлением в состояние
-      const { contact_value, ...safeRequest } = newRequest as any
-      setRequests([safeRequest as SafeRequest, ...requests])
+      if (newRequest && 'contact_value' in newRequest) {
+        const { contact_value, ...safeRequest } = newRequest
+        setRequests([safeRequest as SafeRequest, ...requests])
+      }
       setIsCreateDialogOpen(false)
       router.refresh()
       toast.success('Запрос успешно создан!')
@@ -161,7 +157,7 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Ошибка при создании запроса'
       toast.error(errorMessage)
-      console.error('Error creating request:', error)
+      logger.error('Error creating request', error)
     } finally {
       setIsLoading(false)
     }
@@ -196,7 +192,7 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Ошибка при отклике'
       toast.error(errorMessage)
-      console.error('Error creating offer:', error)
+      logger.error('Error creating offer', error, { requestId: request.id })
     } finally {
       setIsLoadingContact(false)
     }
@@ -207,7 +203,8 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
     categoryFilter !== 'all',
     urgencyFilter !== 'all',
     onlyPaid,
-    searchQuery.length > 0
+    searchQuery.length > 0,
+    dateFilter !== 'all'
   ].filter(Boolean).length
 
   return (
@@ -233,7 +230,7 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
                   <Badge variant="secondary">{activeFiltersCount} активных</Badge>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="space-y-2">
                   <Label>Категория</Label>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -259,6 +256,20 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
                       {Object.entries(urgencyLabels).map(([value, label]) => (
                         <SelectItem key={value} value={value}>{label}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Дата создания</Label>
+                  <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as typeof dateFilter)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Все время" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все время</SelectItem>
+                      <SelectItem value="today">Сегодня</SelectItem>
+                      <SelectItem value="week">За неделю</SelectItem>
+                      <SelectItem value="month">За месяц</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -397,21 +408,12 @@ export function DashboardClient({ initialRequests, initialMyOffers = [], userOff
           </DialogHeader>
           <form onSubmit={handleCreateRequest}>
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label>Категория *</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(v) => setFormData({ ...formData, category: v as Category })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите категорию" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CategoryTiles
+                  selectedCategory={formData.category || undefined}
+                  onCategorySelect={(category) => setFormData({ ...formData, category: category as Category })}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Заголовок *</Label>

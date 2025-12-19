@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -39,7 +40,7 @@ export default function LoginPage() {
       }
     } catch (e) {
       toast.error('Произошла ошибка')
-      console.error('Login error:', e)
+      logger.error('Login error', e)
     } finally {
       setIsLoading(false)
     }
@@ -75,7 +76,7 @@ export default function LoginPage() {
       }
     } catch (e) {
       toast.error('Произошла ошибка')
-      console.error('Signup error:', e)
+      logger.error('Signup error', e)
     } finally {
       setIsLoading(false)
     }

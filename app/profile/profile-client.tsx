@@ -10,8 +10,10 @@ import { Save, Loader2, Upload, Camera } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { toast } from 'sonner'
+import { DISTRICTS } from '@/lib/constants'
+import { logger } from '@/lib/logger'
 
-const districts = ['Центральный', 'Северный', 'Южный', 'Восточный', 'Западный']
+const districts = DISTRICTS.slice(1) // Все кроме "Все районы"
 
 interface ProfileClientProps {
   user: any
@@ -63,7 +65,7 @@ export function ProfileClient({ user, initialProfile }: ProfileClientProps) {
       setFormData({ ...formData, avatar_url: publicUrl })
       toast.success('Аватар успешно загружен')
     } catch (error) {
-      console.error('Error uploading avatar:', error)
+      logger.error('Error uploading avatar', error, { userId: user?.id })
       toast.error('Ошибка при загрузке аватара. Убедитесь, что бакет "avatars" существует и доступен.')
     } finally {
       setIsUploading(false)
@@ -118,20 +120,20 @@ export function ProfileClient({ user, initialProfile }: ProfileClientProps) {
       const { data, error } = result
 
       if (error) {
-        console.error('Supabase error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
+        logger.error('Supabase error updating profile', error, {
+          userId: user.id,
+          errorCode: error.code,
+          errorDetails: error.details,
+          errorHint: error.hint
         })
         throw new Error(`Ошибка при обновлении профиля: ${error.message}${error.code ? ` (код: ${error.code})` : ''}`)
       }
 
-      console.log('Profile updated successfully:', data)
+      logger.info('Profile updated successfully', { userId: user.id })
       router.refresh()
       toast.success('Профиль успешно обновлен!')
     } catch (error) {
-      console.error('Error updating profile:', error)
+      logger.error('Error updating profile', error, { userId: user?.id })
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'Ошибка при обновлении профиля'

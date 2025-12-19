@@ -9,15 +9,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { createRequest } from '@/app/actions/requests'
+import { CategoryTiles } from '@/components/category-tiles'
 import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 import { Loader2 } from 'lucide-react'
 
-type Category = 'уборка' | 'ремонт' | 'доставка' | 'уход' | 'другое'
+type Category = 'уборка' | 'ремонт' | 'доставка' | 'выгул'
 type Urgency = 'today' | 'tomorrow' | 'week' | 'not-urgent'
 type RewardType = 'thanks' | 'money'
 type ContactType = 'telegram' | 'phone'
 
-const categories: Category[] = ['уборка', 'ремонт', 'доставка', 'уход', 'другое']
+const categories: Category[] = ['уборка', 'ремонт', 'доставка', 'выгул']
 const districts = ['Центральный', 'Северный', 'Южный', 'Восточный', 'Западный']
 const urgencyLabels: Record<Urgency, string> = {
   'today': 'Сегодня',
@@ -73,7 +75,7 @@ export function CreateRequestClient({ userDistrict }: CreateRequestClientProps) 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Ошибка при создании запроса'
       toast.error(errorMessage)
-      console.error(error)
+      logger.error('Error creating request', error)
     } finally {
       setIsLoading(false)
     }
@@ -86,21 +88,12 @@ export function CreateRequestClient({ userDistrict }: CreateRequestClientProps) 
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>Категория *</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(v) => setFormData({ ...formData, category: v as Category })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите категорию" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategoryTiles
+                selectedCategory={formData.category || undefined}
+                onCategorySelect={(category) => setFormData({ ...formData, category: category as Category })}
+              />
             </div>
 
             <div className="space-y-2">

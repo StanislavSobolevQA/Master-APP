@@ -8,6 +8,7 @@ import { User, Plus, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
+import { DISTRICTS } from '@/lib/constants'
 
 interface NavbarProps {
   selectedDistrict?: string
@@ -15,7 +16,7 @@ interface NavbarProps {
   onCreateRequest?: () => void
 }
 
-const districts = ['Все районы', 'Центральный', 'Северный', 'Южный', 'Восточный', 'Западный']
+const districts = DISTRICTS
 
 export function Navbar({ selectedDistrict, onDistrictChange, onCreateRequest }: NavbarProps) {
   const router = useRouter()
