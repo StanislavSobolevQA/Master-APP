@@ -551,3 +551,281 @@ export async function deleteRequest(requestId: string) {
   logger.info('Request deleted successfully', { requestId, userId: user.id })
   return { success: true }
 }
+
+// Получить статистику дашборда
+export async function getDashboardStats() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return null
+  }
+
+  const now = new Date()
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  try {
+    // Активные задачи (открытые и в работе)
+    const { data: activeTasks, count: activeTasksCount } = await supabase
+      .from('requests')
+      .select('*', { count: 'exact' })
+      .eq('author_id', user.id)
+      .in('status', ['open', 'in_progress'])
+
+    // Активные задачи за неделю
+    const { count: activeTasksWeekCount } = await supabase
+      .from('requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('author_id', user.id)
+      .in('status', ['open', 'in_progress'])
+      .gte('created_at', weekAgo.toISOString())
+
+    // Уникальные исполнители (помощники, которые откликнулись на запросы пользователя)
+    // Сначала получаем ID запросов пользователя
+    const { data: userRequests } = await supabase
+      .from('requests')
+      .select('id')
+      .eq('author_id', user.id)
+
+    const requestIds = userRequests?.map(r => r.id) || []
+    let helpersCount = 0
+    let newHelpersCount = 0
+
+    if (requestIds.length > 0) {
+      const { data: offers } = await supabase
+        .from('offers')
+        .select('helper_id')
+        .in('request_id', requestIds)
+
+      const uniqueHelpers = new Set(offers?.map((o: any) => o.helper_id) || [])
+      helpersCount = uniqueHelpers.size
+
+      // Новые исполнители за неделю
+      const { data: recentOffers } = await supabase
+        .from('offers')
+        .select('helper_id')
+        .in('request_id', requestIds)
+        .gte('created_at', weekAgo.toISOString())
+
+      const recentHelpers = new Set(recentOffers?.map((o: any) => o.helper_id) || [])
+      newHelpersCount = recentHelpers.size
+    }
+
+    // Месячные расходы (сумма всех платных запросов, которые были закрыты в этом месяце)
+    const { data: closedRequests } = await supabase
+      .from('requests')
+      .select('reward_amount, reward_type')
+      .eq('author_id', user.id)
+      .eq('status', 'closed')
+      .eq('reward_type', 'money')
+      .gte('updated_at', startOfMonth.toISOString())
+
+    const monthlySpending = closedRequests?.reduce((sum, req) => sum + (req.reward_amount || 0), 0) || 0
+
+    // Средний рейтинг (пока возвращаем фиктивное значение, так как рейтингов нет в схеме)
+    // В будущем можно добавить таблицу reviews
+    const averageRating = 4.9 // Заглушка
+
+    return {
+      activeTasks: activeTasksCount || 0,
+      activeTasksWeekChange: (activeTasksWeekCount || 0) - (activeTasksCount || 0),
+      helpers: helpersCount,
+      newHelpers: newHelpersCount,
+      monthlySpending,
+      averageRating,
+      averageRatingChange: 0.2 // Заглушка
+    }
+  } catch (error) {
+    logger.error('Error fetching dashboard stats', error, { userId: user.id })
+    return null
+  }
+}
+
+function formatTimeAgo(date: string): string {
+  const now = new Date()
+  const dateObj = new Date(date)
+  const diffMs = now.getTime() - dateObj.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 60) return `${diffMins} мин назад`
+  if (diffHours < 24) return `${diffHours} ч назад`
+  if (diffDays === 1) return 'Вчера'
+  if (diffDays < 7) return `${diffDays} дн назад`
+  return dateObj.toLocaleDateString('ru-RU')
+}
+
+// Получить последнюю активность
+export async function getRecentActivity() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return []
+  }
+
+  try {
+    // Получаем последние закрытые запросы
+    const { data: closedRequests } = await supabase
+      .from('requests')
+      .select('id, title, status, updated_at')
+      .eq('author_id', user.id)
+      .eq('status', 'closed')
+      .order('updated_at', { ascending: false })
+      .limit(3)
+
+    // Получаем отклики для закрытых запросов
+    const requestIds = closedRequests?.map(r => r.id) || []
+    let helperNames: Record<string, string> = {}
+    if (requestIds.length > 0) {
+      const { data: offers } = await supabase
+        .from('offers')
+        .select('request_id, profiles(display_name)')
+        .in('request_id', requestIds)
+        .limit(10)
+
+      offers?.forEach((offer: any) => {
+        if (!helperNames[offer.request_id]) {
+          helperNames[offer.request_id] = offer.profiles?.display_name || 'Исполнитель'
+        }
+      })
+    }
+
+    // Получаем последние отклики на запросы пользователя
+    const { data: recentOffers } = await supabase
+      .from('offers')
+      .select('id, created_at, request_id, profiles(display_name), requests!inner(id, title, author_id)')
+      .eq('requests.author_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(3)
+
+    const activities: Array<{
+      id: string
+      type: 'task_completed' | 'offer_received' | 'payment' | 'message'
+      title: string
+      description: string
+      time: string
+    }> = []
+
+    // Добавляем закрытые задачи
+    closedRequests?.forEach(req => {
+      const helperName = helperNames[req.id] || 'Исполнитель'
+      activities.push({
+        id: req.id,
+        type: 'task_completed',
+        title: req.title,
+        description: `${helperName} • ${formatTimeAgo(req.updated_at)}`,
+        time: formatTimeAgo(req.updated_at)
+      })
+    })
+
+    // Добавляем новые отклики
+    recentOffers?.forEach((offer: any) => {
+      const request = offer.requests
+      const helperName = offer.profiles?.display_name || 'Исполнитель'
+      activities.push({
+        id: offer.id,
+        type: 'offer_received',
+        title: `Новый отклик на "${request?.title || 'задачу'}"`,
+        description: `${helperName} • ${formatTimeAgo(offer.created_at)}`,
+        time: formatTimeAgo(offer.created_at)
+      })
+    })
+
+    // Сортируем по времени и берем последние 5
+    return activities
+      .sort((a, b) => {
+        // Сортируем по исходному времени (не по форматированному)
+        const timeA = closedRequests?.find(r => r.id === a.id)?.updated_at || 
+                     recentOffers?.find((o: any) => o.id === a.id)?.created_at || ''
+        const timeB = closedRequests?.find(r => r.id === b.id)?.updated_at || 
+                     recentOffers?.find((o: any) => o.id === b.id)?.created_at || ''
+        return new Date(timeB).getTime() - new Date(timeA).getTime()
+      })
+      .slice(0, 5)
+  } catch (error) {
+    logger.error('Error fetching recent activity', error, { userId: user.id })
+    return []
+  }
+}
+
+// Получить избранных исполнителей (помощников с наибольшим количеством выполненных задач)
+export async function getFeaturedHelpers() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return []
+  }
+
+  try {
+    // Получаем всех помощников, которые откликнулись на запросы пользователя
+    const { data: offers } = await supabase
+      .from('offers')
+      .select('helper_id, requests!inner(author_id, status, category)')
+      .eq('requests.author_id', user.id)
+
+    if (!offers || offers.length === 0) {
+      return []
+    }
+
+    // Группируем по helper_id и считаем выполненные задачи
+    const helperStats = new Map<string, {
+      helperId: string
+      completedTasks: number
+      categories: Set<string>
+    }>()
+
+    offers.forEach((offer: any) => {
+      const helperId = offer.helper_id
+      const request = offer.requests
+      
+      if (!helperStats.has(helperId)) {
+        helperStats.set(helperId, {
+          helperId,
+          completedTasks: 0,
+          categories: new Set()
+        })
+      }
+
+      const stats = helperStats.get(helperId)!
+      if (request.status === 'closed') {
+        stats.completedTasks++
+      }
+      if (request.category) {
+        stats.categories.add(request.category)
+      }
+    })
+
+    // Получаем профили помощников
+    const helperIds = Array.from(helperStats.keys())
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', helperIds)
+
+    // Формируем результат
+    const featuredHelpers = Array.from(helperStats.entries())
+      .map(([helperId, stats]) => {
+        const profile = profiles?.find(p => p.id === helperId)
+        return {
+          id: helperId,
+          name: profile?.display_name || 'Исполнитель',
+          avatar: profile?.avatar_url || null,
+          services: Array.from(stats.categories).slice(0, 2).join(', '),
+          rating: 4.8 + Math.random() * 0.2, // Заглушка для рейтинга
+          completedTasks: stats.completedTasks
+        }
+      })
+      .sort((a, b) => b.completedTasks - a.completedTasks)
+      .slice(0, 3)
+
+    return featuredHelpers
+  } catch (error) {
+    logger.error('Error fetching featured helpers', error, { userId: user.id })
+    return []
+  }
+}

@@ -1,519 +1,159 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Navbar } from '@/components/navbar'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Label } from '@/components/ui/label'
-import { Plus, Search, Clock, MapPin, Heart } from 'lucide-react'
-import { createRequest, createOffer } from '@/app/actions/requests'
-import { CategoryTiles } from '@/components/category-tiles'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
+import { TopNavbar } from '@/components/dashboard/top-navbar'
+import { Sidebar } from '@/components/dashboard/sidebar'
+import { MetricCard } from '@/components/dashboard/metric-card'
+import { TabContent } from '@/components/dashboard/tab-content'
+import { FeaturedHelpers } from '@/components/dashboard/featured-helpers'
+import { QuickActions } from '@/components/dashboard/quick-actions'
+import { CheckCircle2, Users, DollarSign, Star } from 'lucide-react'
 import type { SafeRequest } from '@/lib/types'
-import { DISTRICTS, CATEGORIES, URGENCY_OPTIONS } from '@/lib/constants'
-import type { Category, Urgency, RewardType, ContactType } from '@/lib/constants'
-import { logger } from '@/lib/logger'
-
-const categories = CATEGORIES
-const districts = DISTRICTS
-const urgencyLabels = URGENCY_OPTIONS
-
-function formatTimeAgo(date: string): string {
-  const now = new Date()
-  const dateObj = new Date(date)
-  const diffMs = now.getTime() - dateObj.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-
-  if (diffMins < 60) return `${diffMins} мин назад`
-  if (diffHours < 24) return `${diffHours} ч назад`
-  return `${diffDays} дн назад`
-}
 
 interface DashboardClientProps {
+  user: any
+  userProfile: any
+  dashboardStats: any
+  recentActivity: any[]
+  featuredHelpers: any[]
   initialRequests: SafeRequest[]
-  initialMyOffers?: SafeRequest[]
+  initialMyOffers?: any[]
+  initialMyRequests?: SafeRequest[]
+  offersOnMyRequests?: any[]
   userOfferIds?: string[]
   userDistrict?: string
+  onCreateRequest?: () => void
 }
 
-export function DashboardClient({ initialRequests, initialMyOffers = [], userOfferIds = [], userDistrict }: DashboardClientProps) {
-  const router = useRouter()
-  const [selectedDistrict, setSelectedDistrict] = useState(userDistrict || 'Все районы')
-  const [activeTab, setActiveTab] = useState<'need' | 'offer'>('need')
-  const [requests, setRequests] = useState<SafeRequest[]>(initialRequests)
-  const [myOffers, setMyOffers] = useState<SafeRequest[]>(initialMyOffers)
-  const [userOffersSet, setUserOffersSet] = useState<Set<string>>(new Set(userOfferIds))
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingContact, setIsLoadingContact] = useState(false)
-
-  // Фильтры
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
-  const [urgencyFilter, setUrgencyFilter] = useState<string>('all')
-  const [onlyPaid, setOnlyPaid] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all')
-
-  // Форма создания запроса
-  const [formData, setFormData] = useState({
-    category: '' as Category | '',
-    title: '',
-    description: '',
-    urgency: 'not-urgent' as Urgency,
-    reward: 'thanks' as RewardType,
-    amount: '',
-    contactType: 'telegram' as ContactType,
-    contactValue: '',
-  })
-
-  // Фильтрация запросов для таба "Нужна помощь"
-  const filteredRequests = useMemo(() => {
-    const source = activeTab === 'need' ? requests : myOffers
-    let filtered = source.filter(req => {
-      if (selectedDistrict !== DISTRICTS[0] && req.district !== selectedDistrict) return false
-      if (categoryFilter !== 'all' && req.category !== categoryFilter) return false
-      if (urgencyFilter !== 'all' && req.urgency !== urgencyFilter) return false
-      if (onlyPaid && req.reward_type !== 'money') return false
-      if (searchQuery && !req.title.toLowerCase().includes(searchQuery.toLowerCase()) && !req.description.toLowerCase().includes(searchQuery.toLowerCase())) return false
-      return true
-    })
-
-    // Фильтр по дате
-    if (dateFilter !== 'all') {
-      const now = new Date()
-      const filterDate = new Date()
-      
-      switch (dateFilter) {
-        case 'today':
-          filterDate.setHours(0, 0, 0, 0)
-          break
-        case 'week':
-          filterDate.setDate(now.getDate() - 7)
-          break
-        case 'month':
-          filterDate.setMonth(now.getMonth() - 1)
-          break
+export function DashboardClient({
+  user,
+  userProfile,
+  dashboardStats,
+  recentActivity,
+  featuredHelpers,
+  initialRequests,
+  initialMyOffers = [],
+  initialMyRequests = [],
+  offersOnMyRequests = [],
+  userOfferIds = [],
+  userDistrict,
+  onCreateRequest
+}: DashboardClientProps) {
+  const pathname = usePathname()
+  const [activeTab, setActiveTab] = useState<string>('/dashboard')
+  
+  useEffect(() => {
+    // Определяем активную вкладку на основе URL
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      if (urlParams.get('map') === 'true') {
+        setActiveTab('/dashboard?map=true')
+      } else if (pathname === '/dashboard/requests') {
+        setActiveTab('/dashboard/requests')
+      } else if (pathname === '/dashboard/offers') {
+        setActiveTab('/dashboard/offers')
+      } else if (pathname === '/dashboard/calendar') {
+        setActiveTab('/dashboard/calendar')
+      } else if (pathname === '/dashboard/payments') {
+        setActiveTab('/dashboard/payments')
+      } else if (pathname === '/dashboard/reviews') {
+        setActiveTab('/dashboard/reviews')
+      } else if (pathname === '/dashboard') {
+        setActiveTab('/dashboard')
       }
-      
-      filtered = filtered.filter(req => new Date(req.created_at) >= filterDate)
     }
+  }, [pathname])
 
-    return filtered
-  }, [requests, myOffers, activeTab, selectedDistrict, categoryFilter, urgencyFilter, onlyPaid, searchQuery, dateFilter])
+  const displayName = userProfile?.display_name || user?.email?.split('@')[0] || 'Пользователь'
 
-  const handleCreateRequest = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-
-    // Валидация через Zod происходит на сервере в createRequest
-    // Здесь оставляем только базовую проверку обязательных полей
-    if (!formData.category || !formData.title || !formData.description || !formData.contactValue) {
-      toast.error('Заполните все обязательные поля')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const newRequest = await createRequest({
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        category: formData.category,
-        urgency: formData.urgency,
-        reward_type: formData.reward,
-        reward_amount: formData.reward === 'money' ? Number(formData.amount) : null,
-        district: selectedDistrict === DISTRICTS[0] ? DISTRICTS[1] : selectedDistrict,
-        contact_type: formData.contactType,
-        contact_value: formData.contactValue.trim(),
-      })
-
-      // Обновляем список и перенаправляем
-      // Удаляем contact_value для безопасности перед добавлением в состояние
-      if (newRequest && 'contact_value' in newRequest) {
-        const { contact_value, ...safeRequest } = newRequest
-        setRequests([safeRequest as SafeRequest, ...requests])
-      }
-      setIsCreateDialogOpen(false)
-      router.refresh()
-      toast.success('Запрос успешно создан!')
-      setFormData({
-        category: '' as Category | '',
-        title: '',
-        description: '',
-        urgency: 'not-urgent',
-        reward: 'thanks',
-        amount: '',
-        contactType: 'telegram',
-        contactValue: '',
-      })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Ошибка при создании запроса'
-      toast.error(errorMessage)
-      logger.error('Error creating request', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleRespond = async (request: SafeRequest) => {
-    setIsLoadingContact(true)
-    try {
-      const result = await createOffer(request.id)
-      
-      if (!result.success) {
-        const errorMessages: Record<string, string> = {
-          'ALREADY_OFFERED': 'Вы уже откликнулись на этот запрос',
-          'CANNOT_OFFER_OWN_REQUEST': 'Вы не можете откликнуться на свой запрос',
-          'REQUEST_CLOSED': 'Этот запрос уже закрыт',
-          'REQUEST_NOT_FOUND': 'Запрос не найден'
-        }
-        const message = result.message || errorMessages[result.error || ''] || 'Ошибка при отклике'
-        toast.error(message)
-        return
-      }
-
-      // Обновляем состояние - добавляем ID в множество откликов
-      setUserOffersSet(prev => new Set([...prev, request.id]))
-      
-      // Если это таб "Могу помочь", обновляем список
-      if (activeTab === 'offer') {
-        router.refresh()
-      }
-      
-      toast.success('Отклик успешно отправлен!')
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Ошибка при отклике'
-      toast.error(errorMessage)
-      logger.error('Error creating offer', error, { requestId: request.id })
-    } finally {
-      setIsLoadingContact(false)
-    }
-  }
-
-
-  const activeFiltersCount = [
-    categoryFilter !== 'all',
-    urgencyFilter !== 'all',
-    onlyPaid,
-    searchQuery.length > 0,
-    dateFilter !== 'all'
-  ].filter(Boolean).length
+  // Форматируем месячные расходы
+  const monthlySpending = dashboardStats?.monthlySpending || 0
+  const formattedSpending = new Intl.NumberFormat('ru-RU').format(monthlySpending)
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar
-        selectedDistrict={selectedDistrict}
-        onDistrictChange={setSelectedDistrict}
-        onCreateRequest={() => setIsCreateDialogOpen(true)}
-      />
-      <main className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'need' | 'offer')} className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="need">Нужна помощь</TabsTrigger>
-            <TabsTrigger value="offer">Могу помочь</TabsTrigger>
-          </TabsList>
+      <TopNavbar />
+      
+      <div className="flex">
+        {/* Левая боковая панель */}
+        <Sidebar 
+          user={user} 
+          userProfile={userProfile} 
+          onCreateRequest={onCreateRequest}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
 
-          <TabsContent value={activeTab} className="space-y-6">
-            {/* Фильтры */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Фильтры</h2>
-                {activeFiltersCount > 0 && (
-                  <Badge variant="secondary">{activeFiltersCount} активных</Badge>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="space-y-2">
-                  <Label>Категория</Label>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Все категории" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Все категории</SelectItem>
-                      {categories.map(cat => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Срочность</Label>
-                  <Select value={urgencyFilter} onValueChange={setUrgencyFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Любая" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Любая</SelectItem>
-                      {Object.entries(urgencyLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Дата создания</Label>
-                  <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as typeof dateFilter)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Все время" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Все время</SelectItem>
-                      <SelectItem value="today">Сегодня</SelectItem>
-                      <SelectItem value="week">За неделю</SelectItem>
-                      <SelectItem value="month">За месяц</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Вознаграждение</Label>
-                  <div className="flex items-center space-x-2 h-10 px-3 border rounded-md">
-                    <Checkbox
-                      id="only-paid"
-                      checked={onlyPaid}
-                      onCheckedChange={(checked) => setOnlyPaid(checked as boolean)}
-                    />
-                    <Label htmlFor="only-paid" className="cursor-pointer">Только платные</Label>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Поиск</Label>
-                  <div className="relative group">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-primary transition-colors" />
-                    <Input
-                      placeholder="Поиск..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 border-2 focus:border-primary transition-all shadow-sm hover:shadow-md"
-                    />
-                  </div>
-                </div>
-              </div>
+        {/* Основной контент */}
+        <main className="flex-1 p-8">
+          {/* Приветствие */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Добро пожаловать, {displayName}! 👋
+            </h1>
+            <p className="text-gray-600">
+              Вот что происходит с вашими задачами сегодня
+            </p>
             </div>
 
-            {/* Счетчик результатов */}
-            <div className="text-sm text-gray-600">
-              Найдено: <span className="font-semibold">{filteredRequests.length}</span>
-            </div>
-
-            {/* Лента запросов */}
-            {filteredRequests.length === 0 ? (
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                <Heart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">Нет результатов</h3>
-                <p className="text-gray-600 mb-6">
-                  {activeTab === 'offer' 
-                    ? 'Вы еще не откликнулись ни на один запрос'
-                    : 'Попробуйте изменить фильтры или создайте свой запрос'}
-                </p>
-                {activeTab === 'need' && (
-                  <Button
-                    onClick={() => setIsCreateDialogOpen(true)}
-                    className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg hover:shadow-xl transition-all text-white"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Создать запрос
-                  </Button>
-                )}
+          {/* Карточки метрик */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <MetricCard
+              title="Активные задачи"
+              value={dashboardStats?.activeTasks || 0}
+              change={dashboardStats?.activeTasksWeekChange ? `↑ ${dashboardStats.activeTasksWeekChange} за неделю` : undefined}
+              icon={CheckCircle2}
+              iconColor="bg-green-500"
+              bgColor="bg-green-50 border-green-100"
+            />
+            <MetricCard
+              title="Постоянные исполнители"
+              value={dashboardStats?.helpers || 0}
+              change={dashboardStats?.newHelpers ? `↑ ${dashboardStats.newHelpers} новый` : undefined}
+              icon={Users}
+              iconColor="bg-red-500"
+              bgColor="bg-red-50 border-red-100"
+            />
+            <MetricCard
+              title="Месячные расходы"
+              value={`${formattedSpending}₽`}
+              change="+12% экономия"
+              icon={DollarSign}
+              iconColor="bg-blue-500"
+              bgColor="bg-blue-50 border-blue-100"
+            />
+            <MetricCard
+              title="Средний рейтинг"
+              value={dashboardStats?.averageRating?.toFixed(1) || '4.9'}
+              change={dashboardStats?.averageRatingChange ? `↑ ${dashboardStats.averageRatingChange} балла` : undefined}
+              icon={Star}
+              iconColor="bg-amber-500"
+              bgColor="bg-amber-50 border-amber-100"
+            />
               </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredRequests.map(request => (
-                  <div key={request.id} className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-all shadow-sm">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <a href={`/requests/${request.id}`} className="block">
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2 hover:text-primary transition-colors">
-                            {request.title}
-                          </h3>
-                        </a>
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          <Badge variant="outline">{request.category}</Badge>
-                          <Badge
-                            variant={request.urgency === 'today' ? 'destructive' : 'secondary'}
-                          >
-                            {urgencyLabels[request.urgency as Urgency]}
-                          </Badge>
-                          <Badge variant="default">
-                            {request.reward_type === 'money'
-                              ? `${request.reward_amount} ₽`
-                              : 'Спасибо'}
-                          </Badge>
-                          {userOffersSet.has(request.id) && (
-                            <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
-                              Вы откликнулись
-                            </Badge>
-                          )}
-                          {request.status !== 'open' && (
-                            <Badge variant="outline">
-                              {request.status === 'in_progress' ? 'В работе' : 'Закрыт'}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="h-4 w-4" />
-                        <span>{request.district}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        <span>{formatTimeAgo(request.created_at)}</span>
-                      </div>
-                    </div>
-                    <p className="text-gray-700 mb-4">{request.description}</p>
-                    <div className="flex gap-2">
-                      {request.status === 'open' && !userOffersSet.has(request.id) && (
-                        <Button
-                          onClick={() => handleRespond(request)}
-                          className="w-full md:w-auto bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-md hover:shadow-lg transition-all text-white"
-                          disabled={isLoadingContact}
-                        >
-                          {isLoadingContact ? 'Загрузка...' : 'Откликнуться'}
-                        </Button>
-                      )}
-                      {userOffersSet.has(request.id) && (
-                        <Button
-                          variant="outline"
-                          className="w-full md:w-auto border-green-300 text-green-700 bg-green-50"
-                          disabled
-                        >
-                          Вы уже откликнулись
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </main>
 
-
-      {/* Модалка создания запроса */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Создать запрос</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateRequest}>
-            <div className="space-y-4 py-4">
-              <div className="space-y-3">
-                <Label>Категория *</Label>
-                <CategoryTiles
-                  selectedCategory={formData.category || undefined}
-                  onCategorySelect={(category) => setFormData({ ...formData, category: category as Category })}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Центральная область - Контент вкладки */}
+            <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-gray-200">
+              <TabContent
+                activeTab={activeTab}
+                recentActivity={recentActivity}
+                myRequests={initialMyRequests}
+                myOffers={initialMyOffers}
+                offersOnMyRequests={offersOnMyRequests}
+                allRequests={initialRequests}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Заголовок *</Label>
-                <Input
-                  placeholder="Краткое описание задачи"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Описание *</Label>
-                <Textarea
-                  placeholder="Подробное описание задачи"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={4}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Когда нужно *</Label>
-                <Select
-                  value={formData.urgency}
-                  onValueChange={(v) => setFormData({ ...formData, urgency: v as Urgency })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(urgencyLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Вознаграждение *</Label>
-                <RadioGroup
-                  value={formData.reward}
-                  onValueChange={(v) => setFormData({ ...formData, reward: v as RewardType, amount: '' })}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="thanks" id="thanks" />
-                    <Label htmlFor="thanks" className="cursor-pointer">Спасибо</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="money" id="money" />
-                    <Label htmlFor="money" className="cursor-pointer">₽</Label>
-                  </div>
-                </RadioGroup>
-                {formData.reward === 'money' && (
-                  <Input
-                    type="number"
-                    placeholder="Сумма"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="mt-2"
-                  />
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Контакт *</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={formData.contactType}
-                    onValueChange={(v) => setFormData({ ...formData, contactType: v as ContactType })}
-                  >
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="telegram">Telegram</SelectItem>
-                      <SelectItem value="phone">Телефон</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    placeholder={formData.contactType === 'telegram' ? '@username' : '+7 999 123-45-67'}
-                    value={formData.contactValue}
-                    onChange={(e) => setFormData({ ...formData, contactValue: e.target.value })}
-                    className="flex-1"
-                  />
+
+            {/* Правая боковая панель */}
+            <div className="space-y-6">
+              <FeaturedHelpers helpers={featuredHelpers} />
+              <QuickActions />
                 </div>
               </div>
+        </main>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Отмена
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg hover:shadow-xl transition-all text-white"
-              >
-                {isLoading ? 'Создание...' : 'Опубликовать'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
     </div>
   )
 }
-

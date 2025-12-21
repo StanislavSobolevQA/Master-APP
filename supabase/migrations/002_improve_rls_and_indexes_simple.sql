@@ -118,3 +118,6 @@ CREATE TRIGGER trigger_notify_new_offer
   EXECUTE FUNCTION notify_new_offer();
 
 
+
+
+
