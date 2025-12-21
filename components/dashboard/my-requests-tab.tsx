@@ -39,10 +39,10 @@ export function MyRequestsTab({ requests }: MyRequestsTabProps) {
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">Мои запросы</h2>
+        <h2 className="text-xl font-semibold text-gray-900">Мои поручения</h2>
         <Link href="/dashboard/create">
           <Button size="sm" variant="outline">
-            Создать запрос
+            Создать поручение
           </Button>
         </Link>
       </div>
@@ -51,7 +51,7 @@ export function MyRequestsTab({ requests }: MyRequestsTabProps) {
         <div className="text-center py-12">
           <p className="text-gray-600 mb-4">У вас пока нет запросов</p>
           <Button asChild>
-            <Link href="/dashboard/create">Создать запрос</Link>
+            <Link href="/dashboard/create">Создать поручение</Link>
           </Button>
         </div>
       ) : (

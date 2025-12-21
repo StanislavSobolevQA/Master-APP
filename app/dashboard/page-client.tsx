@@ -55,6 +55,8 @@ export function DashboardClient({
         setActiveTab('/dashboard/offers')
       } else if (pathname === '/dashboard/calendar') {
         setActiveTab('/dashboard/calendar')
+      } else if (pathname === '/dashboard/create') {
+        setActiveTab('/dashboard/create')
       } else if (pathname === '/dashboard/payments') {
         setActiveTab('/dashboard/payments')
       } else if (pathname === '/dashboard/reviews') {
@@ -143,13 +145,14 @@ export function DashboardClient({
                 myOffers={initialMyOffers}
                 offersOnMyRequests={offersOnMyRequests}
                 allRequests={initialRequests}
+                userDistrict={userDistrict}
                 />
               </div>
 
             {/* Правая боковая панель */}
             <div className="space-y-6">
               <FeaturedHelpers helpers={featuredHelpers} />
-              <QuickActions />
+              <QuickActions onTabChange={setActiveTab} />
                 </div>
               </div>
         </main>

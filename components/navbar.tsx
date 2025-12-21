@@ -89,13 +89,13 @@ export function Navbar({ selectedDistrict, onDistrictChange, onCreateRequest }: 
                     className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg hover:shadow-xl transition-all text-white"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Создать запрос
+                    Создать поручение
                   </Button>
                 ) : (
                   <Button asChild className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg hover:shadow-xl transition-all text-white">
                     <Link href="/dashboard/create" className="flex items-center">
                       <Plus className="h-4 w-4 mr-2" />
-                      Создать запрос
+                      Создать поручение
                     </Link>
                   </Button>
                 )}

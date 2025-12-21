@@ -4,15 +4,33 @@ import { Button } from '@/components/ui/button'
 import { Plus, FileText, Wallet, BarChart3 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-export function QuickActions() {
+interface QuickActionsProps {
+  onTabChange?: (tab: string) => void
+}
+
+export function QuickActions({ onTabChange }: QuickActionsProps) {
   const router = useRouter()
 
   const actions = [
-    { icon: Plus, label: 'Создать запрос', href: '/dashboard/create', isGradient: true },
+    { 
+      icon: Plus, 
+      label: 'Создать поручение', 
+      href: '/dashboard/create', 
+      isGradient: true,
+      isTab: true // Это вкладка, а не страница
+    },
     { icon: FileText, label: 'Шаблоны', href: '/dashboard/templates', color: 'bg-gray-500 hover:bg-gray-600' },
     { icon: Wallet, label: 'Пополнить', href: '/dashboard/payments', color: 'bg-green-500 hover:bg-green-600' },
     { icon: BarChart3, label: 'Отчёты', href: '/dashboard/reports', color: 'bg-purple-500 hover:bg-purple-600' },
   ]
+
+  const handleClick = (action: typeof actions[0]) => {
+    if (action.isTab && onTabChange) {
+      onTabChange(action.href)
+    } else {
+      router.push(action.href)
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl p-6 border border-gray-200 mt-6">
@@ -23,7 +41,7 @@ export function QuickActions() {
           return (
             <Button
               key={action.label}
-              onClick={() => router.push(action.href)}
+              onClick={() => handleClick(action)}
               className={
                 action.isGradient
                   ? 'bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white h-auto py-3 flex flex-col items-center gap-2'

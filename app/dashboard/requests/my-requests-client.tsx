@@ -48,7 +48,7 @@ export function MyRequestsClient({ initialRequests }: MyRequestsClientProps) {
           <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
             <p className="text-gray-600 mb-4">У вас пока нет запросов</p>
             <Button asChild>
-              <a href="/dashboard/create">Создать запрос</a>
+              <a href="/dashboard/create">Создать поручение</a>
             </Button>
           </div>
         ) : (

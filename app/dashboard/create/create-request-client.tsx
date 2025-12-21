@@ -84,7 +84,7 @@ export function CreateRequestClient({ userDistrict }: CreateRequestClientProps) 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-4 max-w-2xl">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Создать запрос</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">Создать поручение</h1>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
           <form onSubmit={handleSubmit} className="space-y-6">

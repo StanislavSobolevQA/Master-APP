@@ -66,7 +66,7 @@ export function Sidebar({ user, userProfile, onCreateRequest, activeTab, onTabCh
   const menuItems = [
     { href: '/', label: 'Главная', icon: Home },
     { href: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
-    { href: '/dashboard/requests', label: 'Мои запросы', icon: CheckSquare },
+    { href: '/dashboard/requests', label: 'Мои поручения', icon: CheckSquare },
     { href: '/dashboard/offers', label: 'Мои отклики', icon: Users },
     { href: '/dashboard/calendar', label: 'Календарь', icon: Calendar },
     { href: '/dashboard/offers', label: 'Исполнители', icon: Users, secondary: true },
@@ -117,7 +117,8 @@ export function Sidebar({ user, userProfile, onCreateRequest, activeTab, onTabCh
           const isActive = currentActiveTab === item.href || 
             (item.href === '/dashboard' && currentActiveTab === '/dashboard') ||
             (item.href === '/dashboard/requests' && currentActiveTab === '/dashboard/requests') ||
-            (item.href === '/dashboard/offers' && currentActiveTab === '/dashboard/offers')
+            (item.href === '/dashboard/offers' && currentActiveTab === '/dashboard/offers') ||
+            (item.href === '/dashboard/create' && currentActiveTab === '/dashboard/create')
           
           if (item.secondary) return null // Пропускаем дубликаты
           
